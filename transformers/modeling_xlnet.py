@@ -520,7 +520,7 @@ XLNET_INPUTS_DOCSTRING = r"""
             the important thing is that they should be different for tokens which belong to different segments.
             The model will compute relative segment differences from the given type indices:
             0 if the segment id of two tokens are the same, 1 if not.
-        **attention_mask**: (`optional`) ``torch.FloatTensor`` of shape ``(batch_size, sequence_length)``:
+       **attention_mask**: (`optional`) ``torch.FloatTensor`` of shape ``(batch_size, sequence_length)``:
             Mask to avoid performing attention on padding token indices.
             Mask values selected in ``[0, 1]``:
             ``1`` for tokens that are NOT MASKED, ``0`` for MASKED tokens.
