@@ -299,10 +299,17 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_file = args.predict_file if evaluate else args.train_file
-    cached_features_file = os.path.join(os.path.dirname(input_file), 'cached_{}_{}_{}'.format(
-        'dev' if evaluate else 'train',
-        list(filter(None, args.model_name_or_path.split('/'))).pop(),
-        str(args.max_seq_length)))
+    if args.model_name_or_path:
+        cached_features_file = os.path.join(os.path.dirname(input_file), 'cached_{}_{}_{}'.format(
+            'dev' if evaluate else 'train',
+            list(filter(None, args.model_name_or_path.split('/'))).pop(),
+            str(args.max_seq_length)))
+    else:
+        cached_features_file = os.path.join(os.path.dirname(input_file), 'cached_{}_{}_{}'.format(
+            'dev' if evaluate else 'train',
+            list(filter(None, args.config_name.split('/'))).pop(),
+            str(args.max_seq_length)))
+
     if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
@@ -360,7 +367,7 @@ def main():
                         help="SQuAD json for predictions. E.g., dev-v1.1.json or test-v1.1.json")
     parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
-    parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
+    parser.add_argument("--model_name_or_path", default=None, type=str,
                         help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model checkpoints and predictions will be written.")
@@ -488,16 +495,19 @@ def main():
 
     args.model_type = args.model_type.lower()
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+<<<<<<< HEAD
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path,
                                           cache_dir=args.cache_dir if args.cache_dir else None)
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
-    model = model_class.from_pretrained(args.model_name_or_path,
-                                        from_tf=bool('.ckpt' in args.model_name_or_path),
-                                        config=config,
-                                        cache_dir=args.cache_dir if args.cache_dir else None)
-
+    if args.model_name_or_path:
+        model = model_class.from_pretrained(args.model_name_or_path,
+                                            from_tf=bool('.ckpt' in args.model_name_or_path),
+                                            config=config,
+                                            cache_dir=args.cache_dir if args.cache_dir else None)
+    else:
+        model = model_class(config=config)
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
