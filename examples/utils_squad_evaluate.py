@@ -69,9 +69,19 @@ def normalize_answer(s):
     return text.lower()
   return white_space_fix(remove_articles(remove_punc(lower(s))))
 
+def is_english_num(s):
+  try:
+    s.encode(encoding='utf-8').decode('ascii')
+  except UnicodeDecodeError:
+    return False
+  else:
+    return True
+
 def get_tokens(s):
   if not s: return []
-  return normalize_answer(s).split()
+  if is_english_num(s):
+    return normalize_answer(s).split()
+  return [w for w in normalize_answer(s)]
 
 def compute_exact(a_gold, a_pred):
   return int(normalize_answer(a_gold) == normalize_answer(a_pred))
