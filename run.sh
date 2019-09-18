@@ -9,6 +9,7 @@ python -m torch.distributed.launch --nproc_per_node=1 ./examples/run_squad.py \
     --do_lower_case \
     --train_file $SQUAD_DIR/DRCD_training.json \
     --predict_file $SQUAD_DIR/DRCD_dev.json \
+    --tb_dir $HOME/models/tb_log/DRCD_from_en/ \
     --learning_rate 3e-5 \
     --num_train_epochs 50 \
     --max_seq_length 384 \

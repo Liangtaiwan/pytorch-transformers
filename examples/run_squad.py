@@ -83,7 +83,7 @@ def to_list(tensor):
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     if args.local_rank in [-1, 0]:
-        tb_writer = SummaryWriter()
+        tb_writer = SummaryWriter(args.tb_dir)
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
@@ -305,14 +305,21 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
             list(filter(None, args.model_name_or_path.split('/'))).pop(),
             str(args.max_seq_length)))
     else:
+        # TODO
+        # update name
         cached_features_file = os.path.join(os.path.dirname(input_file), 'cached_{}_{}_{}'.format(
             'dev' if evaluate else 'train',
             list(filter(None, args.config_name.split('/'))).pop(),
             str(args.max_seq_length)))
 
-    if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
+        if output_examples:
+            examples = read_squad_examples(input_file=input_file,
+                                                is_training=not evaluate,
+                                                version_2_with_negative=args.version_2_with_negative)
+
     else:
         logger.info("Creating features from dataset file at %s", input_file)
         examples = read_squad_examples(input_file=input_file,
@@ -371,6 +378,8 @@ def main():
                         help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model checkpoints and predictions will be written.")
+    parser.add_argument("--tb_dir", default=None, type=str,
+                        help="The tensorboard directory where the model tensorboard logs will be written.")
 
     ## Other parameters
     parser.add_argument("--config_name", default="", type=str,
@@ -560,7 +569,7 @@ def main():
     if args.do_eval and args.local_rank in [-1, 0]:
         checkpoints = [args.output_dir]
         if args.eval_all_checkpoints:
-            tb_writer = SummaryWriter()
+            tb_writer = SummaryWriter(args.tb_dir)
             checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
             logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce model loading logs
 
