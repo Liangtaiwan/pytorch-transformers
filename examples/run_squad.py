@@ -560,6 +560,7 @@ def main():
     if args.do_eval and args.local_rank in [-1, 0]:
         checkpoints = [args.output_dir]
         if args.eval_all_checkpoints:
+            tb_writer = SummaryWriter()
             checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
             logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce model loading logs
 
@@ -573,6 +574,9 @@ def main():
 
             # Evaluate
             result = evaluate(args, model, tokenizer, prefix=global_step)
+            if args.eval_all_checkpoints:
+                for key, value in result.items():
+                    tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
 
             result = dict((k + ('_{}'.format(global_step) if global_step else ''), v) for k, v in result.items())
             results.update(result)
