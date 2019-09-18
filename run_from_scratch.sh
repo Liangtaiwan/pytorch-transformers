@@ -1,4 +1,4 @@
-SQUAD_DIR=$HOME/sentence_squad/DRCD
+SQUAD_DIR=$HOME/DRCD
 
 
 python ./examples/run_squad.py \
@@ -11,13 +11,13 @@ python ./examples/run_squad.py \
     --train_file $SQUAD_DIR/DRCD_training.json \
     --predict_file $SQUAD_DIR/DRCD_dev.json \
     --learning_rate 3e-5 \
-    --num_train_epochs 10 \
+    --num_train_epochs 50 \
     --max_seq_length 384 \
     --doc_stride 128 \
     --logging_steps 3000 \
-    --save_steps 1000 \
+    --save_steps 3000 \
     --evaluate_during_training \
-    --output_dir ../models/DRCD/ \
+    --output_dir $HOME/models/DRCD_from_scratch/ \
     --overwrite_output_dir \
     --per_gpu_eval_batch_size=16   \
     --per_gpu_train_batch_size=16   \
