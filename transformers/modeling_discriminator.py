@@ -17,7 +17,8 @@ class Discriminator(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.loss_fn = nn.BCELoss()
 
-    def forward(self, hidden_states, labels):
+    def forward(self, hidden_states, mask, labels):
+        hidden_states = self.encoder(hidden_states, mask)
         self.logits = self.linear(hidden_states)
         dis_loss = self.loss_fn(self.sigmoid(self.logits), labels)
         return dis_loss
