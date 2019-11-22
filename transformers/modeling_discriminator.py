@@ -23,6 +23,10 @@ class Discriminator(nn.Module):
         dis_loss = self.loss_fn(self.sigmoid(self.logits), labels)
         return dis_loss
 
+    @classmethod
+    def create_discriminator(cls, config):
+        return nn.ModuleList([cls(config) for _ in config.confused_layers])
+
 
 class Pooler(nn.Module):
     def __init__(self, config):
@@ -36,11 +40,14 @@ class Pooler(nn.Module):
             return hidden_states[:, -1]
         # TODO cnn should change mask
         elif self.pooler_type='mean':
-            replace_hidden_states=hidden_states.masked_fill(mask, 0.0)
-            value_sum = torch.sum(replace_hidden_states, dim=1)
-            value_count = torch.sum(mask.float(), dim=1)
-            assert value_count!=0
-            return value_sum / value_count
+            if mask is None:
+                return torch.mean(hidden_states, dim=1)
+            else:
+                replace_hidden_states=hidden_states.masked_fill(mask, 0.0)
+                value_sum = torch.sum(replace_hidden_states, dim=1)
+                value_count = torch.sum(mask.float(), dim=1)
+                assert value_count!=0
+                return value_sum / value_count
         raise ValueError("Unrecognized Pooler Type")
 
 

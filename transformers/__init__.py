@@ -61,6 +61,7 @@ from .configuration_roberta import RobertaConfig, ROBERTA_PRETRAINED_CONFIG_ARCH
 from .configuration_distilbert import DistilBertConfig, DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
 from .configuration_albert import AlbertConfig, ALBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
 from .configuration_camembert import CamembertConfig, CAMEMBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+from .configuration_discriminator import DiscriminatorConfig
 
 # Modeling
 if is_torch_available():
@@ -107,6 +108,7 @@ if is_torch_available():
                                 CamembertForTokenClassification,
                                 CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_MAP)
     from .modeling_encoder_decoder import PreTrainedEncoderDecoder, Model2Model
+    from .modeling_disciminator import Discriminator
 
     from .modeling_albert import (AlbertPreTrainedModel, AlbertModel, AlbertForMaskedLM, AlbertForSequenceClassification,
                                 AlbertForQuestionAnswering,
