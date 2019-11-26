@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class DiscriminatorConfig(PretrainedConfig):
-    pretrained_config_archive_map = BERT_PRETRAINED_CONFIG_ARCHIVE_MAP
     def __init__(self,
                  config_json_file=None,
                  **kwargs):
