@@ -98,8 +98,14 @@ class TextDataset(Dataset):
         return torch.tensor(self.examples[item])
 
 
-def load_and_cache_examples(args, tokenizer, evaluate=False):
-    dataset = TextDataset(tokenizer, args, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=args.block_size)
+def load_and_cache_examples(args, tokenizer, evaluate=False, source=False, target=False):
+    if evaluate:
+        dataset = TextDataset(tokenizer, args, file_path=args.eval_data_file, block_size=args.block_size)
+    else:
+        if source:
+            dataset = TextDataset(tokenizer, args, file_path=args.source_data_file, block_size=args.block_size)
+        elif target:
+            dataset = TextDataset(tokenizer, args, file_path=args.target_data_file, block_size=args.block_size)
     return dataset
 
 
@@ -163,20 +169,25 @@ def mask_tokens(inputs, tokenizer, args):
     return inputs, labels
 
 
-def train(args, train_dataset, model, discriminators, tokenizer):
+def train(args, source_dataset, target_dataset, model, discriminators, tokenizer):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
-    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
-
+    args.source_batch_size = args.per_gpu_source_batch_size * max(1, args.n_gpu)
+    args.target_batch_size = args.per_gpu_target_batch_size * max(1, args.n_gpu)
+    source_sampler = RandomSampler(source_dataset) if args.local_rank == -1 else DistributedSampler(source_dataset)
+    source_dataloader = DataLoader(source_dataset, sampler=source_sampler, batch_size=args.source_batch_size)
+    target_sampler = RandomSampler(target_dataset) if args.local_rank == -1 else DistributedSampler(target_dataset)
+    target_dataloader = DataLoader(target_dataset, sampler=target_sampler, batch_size=args.target_batch_size)
+    
+    if len(source_dataset)>len(target_dataset):
+        logger.warning(f"number of source dataset {len(source_dataset)} smaller than number of target dataset {len(target_dataset)}")
     if args.max_steps > 0:
         t_total = args.max_steps
-        args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
+        args.num_train_epochs = args.max_steps // (len(target_dataloader) // args.gradient_accumulation_steps) + 1
     else:
-        t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+        t_total = len(target_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
@@ -186,8 +197,8 @@ def train(args, train_dataset, model, discriminators, tokenizer):
         ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     optimizer_D_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        {'params': [p for n, p in discriminators.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        {'params': [p for n, p in discriminators.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
     optimizer_D = AdamW(optimizer_D_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
@@ -211,11 +222,15 @@ def train(args, train_dataset, model, discriminators, tokenizer):
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
+    logger.info("  Num source examples = %d", len(source_dataset))
+    logger.info("  Num target examples = %d", len(target_dataset))
     logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
-    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-                   args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+    logger.info("  Instantaneous source batch size per GPU = %d", args.per_gpu_source_batch_size)
+    logger.info("  Instantaneous target batch size per GPU = %d", args.per_gpu_target_batch_size)
+    logger.info("  Total train source batch size (w. parallel, distributed & accumulation) = %d",
+                   args.source_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+    logger.info("  Total train target batch size (w. parallel, distributed & accumulation) = %d",
+                   args.target_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
     logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
 
@@ -226,16 +241,18 @@ def train(args, train_dataset, model, discriminators, tokenizer):
     set_seed(args)  # Added here for reproducibility (even between python 2 and 3)
     for _ in train_iterator:
         #TODO return language token
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        for step, batch in enumerate(epoch_iterator):
-            inputs, labels = mask_tokens(batch, tokenizer, args) if args.mlm else (batch, batch)
-            inputs = inputs.to(args.device)
-            labels = labels.to(args.device)
+        epoch_iterator = tqdm(zip(source_dataloader, target_dataloader), desc="Iteration", disable=args.local_rank not in [-1, 0])
+        for step, (source_batch, target_batch) in enumerate(epoch_iterator):
+            source_inputs, source_labels = mask_tokens(source_batch, tokenizer, args) if args.mlm else (source_batch, source_batch)
+            target_inputs, target_labels = mask_tokens(target_batch, tokenizer, args) if args.mlm else (target_batch, target_batch)
+            source_inputs, source_labels = source_inputs.to(args.device), source_labels.to(args.device)
+            target_inputs, target_labels = target_inputs.to(args.device), target_labels.to(args.device)
             model.train()
             discriminators.train()
-            outputs = model(inputs, masked_lm_labels=labels) if args.mlm else model(inputs, labels=labels)
-            update_D()
-            update_model()
+            source_outputs = model(source_inputs, masked_lm_labels=source_labels) if args.mlm else model(source_inputs, labels=source_labels)
+            target_outputs = model(target_inputs, masked_lm_labels=target_labels) if args.mlm else model(target_inputs, labels=target_labels)
+            update_D(args, model, discriminators, source_outputs, target_outputs, optimizer, scheduler, step)
+            update_model(args, model, discriminators, target_outputs, optimizer, scheduler, step)
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
@@ -250,10 +267,14 @@ def train(args, train_dataset, model, discriminators, tokenizer):
 
 
 
-def update_model(args, model, outputs, optimizer, scheduler, step):
+def update_model(args, model, discriminators, target_outputs, optimizer, scheduler, step):
     global global_step
+    loss_D = []
     loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
-
+    target_batch_size = target_outputs.size(0)
+    for dis in discriminators:
+        loss_D.append(dis(target_hidden_states[dis.confused_layer]), label = torch.full((target_batch_size,), 1, device=args.device))
+    loss += torch.sum(loss_D)
     if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
     if args.gradient_accumulation_steps > 1:
@@ -300,13 +321,19 @@ def update_model(args, model, outputs, optimizer, scheduler, step):
             _rotate_checkpoints(args, checkpoint_prefix)
 
 
-def update_D(args, model, outputs, optimizer, scheduler, step):
+def update_D(args, model, discriminators, source_outputs, target_outputs, optimizer, scheduler, step):
     global global_step
-    hidden_states =  outputs[3]
-    loss_D = []
-    for dis, layer in zip(discriminators, dis_config.confused_layers):
-        loss_D.append(dis(hidden_states[layer]), dis_labels)
-    loss = torch.sum(loss_D)
+    source_hidden_states, target_hidden_states =  source_outputs[3], target_outputs[3]
+    loss_source_D = []
+    loss_target_D = []
+    source_batch_size = source_outputs.size(0)
+    target_batch_size = target_outputs.size(0)
+    for dis in discriminators:
+        loss_source_D.append(dis(source_hidden_states[dis.confused_layer]), label = torch.full((source_batch_size,), 1, device=args.device))
+        loss_target_D.append(dis(target_hidden_states[dis.confused_layer]), label = torch.full((target_batch_size,), 0, device=args.device))
+    loss_target_D = 2 * (loss_source_D) * (source_batch_size) / (source_batch_size + target_batch_size)
+    loss_source_D = 2 * (loss_target_D) * (target_batch_size) / (source_batch_size + target_batch_size)
+    loss = torch.sum(loss_source_D) + torch.sum(loss_target_D)
     if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
     if args.gradient_accumulation_steps > 1:
@@ -324,10 +351,11 @@ def update_D(args, model, outputs, optimizer, scheduler, step):
         if args.fp16:
             torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
         else:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(discriminators.parameters(), args.max_grad_norm)
         optimizer.step()
         scheduler.step()  # Update learning rate schedule
         model.zero_grad()
+        discriminators.zero_grad()
         global_step += 1
 
         if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
@@ -396,7 +424,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--train_data_file", default=None, type=str, required=True,
+    parser.add_argument("--source_data_file", default=None, type=str, required=True,
+                        help="The input training data file (a text file).")
+    parser.add_argument("--target_data_file", default=None, type=str, required=True,
                         help="The input training data file (a text file).")
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
@@ -416,6 +446,8 @@ def main():
                         help="Ratio of tokens to mask for masked language modeling loss")
 
     parser.add_argument("--config_name", default="", type=str,
+                        help="Optional pretrained config name or path if not the same as model_name_or_path")
+    parser.add_argument("--dis_config_name", default="", type=str,
                         help="Optional pretrained config name or path if not the same as model_name_or_path")
     parser.add_argument("--tokenizer_name", default="", type=str,
                         help="Optional pretrained tokenizer name or path if not the same as model_name_or_path")
@@ -540,8 +572,8 @@ def main():
                                         config=config,
                                         cache_dir=args.cache_dir if args.cache_dir else None)
     model.to(args.device)
-    dis_config = DiscriminatorConfig(args.dis_config_path)
-    discriminators = Discriminator.create_discriminator(config=dis_config)
+    dis_config = DiscriminatorConfig(args.dis_config_name)
+    discriminators = Discriminator.create_discriminator(config=dis_config, model_config=config)
     discriminators.to(args.device)
 
     if args.local_rank == 0:
@@ -554,12 +586,13 @@ def main():
         if args.local_rank not in [-1, 0]:
             torch.distributed.barrier()  # Barrier to make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-        train_dataset = load_and_cache_examples(args, tokenizer, evaluate=False)
+        source_dataset = load_and_cache_examples(args, tokenizer, source=True)
+        target_dataset = load_and_cache_examples(args, tokenizer, target=True)
 
         if args.local_rank == 0:
             torch.distributed.barrier()
 
-        global_step, tr_loss = train(args, train_dataset, model, discriminators, tokenizer)
+        global_step, tr_loss = train(args, source_dataset, target_dataset, model, discriminators, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
 

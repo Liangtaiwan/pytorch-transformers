@@ -9,13 +9,14 @@ LAYER_CLASSES = {
 }
 
 class Discriminator(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, model_config, layer):
         super(Discriminator, self).__init__()
         discriminator = config.discriminator
         self.encoder = ENCODER_CLASSES[config.discriminator]
-        self.linear = nn.Linear(config.hidden_size, 1)
+        self.linear = nn.Linear(model_config.hidden_size, 1)
         self.sigmoid = nn.Sigmoid()
         self.loss_fn = nn.BCELoss()
+        self.confused_layer=layer-1
 
     def forward(self, hidden_states, mask, labels):
         hidden_states = self.encoder(hidden_states, mask)
@@ -23,9 +24,12 @@ class Discriminator(nn.Module):
         dis_loss = self.loss_fn(self.sigmoid(self.logits), labels)
         return dis_loss
 
+    def __repr__(self):
+        return f"Discriminator for layer {self.confused_layer+1}"
+
     @classmethod
-    def create_discriminator(cls, config):
-        return nn.ModuleList([cls(config) for _ in config.confused_layers])
+    def create_discriminator(cls, config, model_config):
+        return nn.ModuleList([cls(config, model_config, layer) for layer in config.confused_layers])
 
 
 class Pooler(nn.Module):
