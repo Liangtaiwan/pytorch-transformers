@@ -108,7 +108,7 @@ if is_torch_available():
                                 CamembertForTokenClassification,
                                 CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_MAP)
     from .modeling_encoder_decoder import PreTrainedEncoderDecoder, Model2Model
-    from .modeling_disciminator import Discriminator
+    from .modeling_discriminator import Discriminator
 
     from .modeling_albert import (AlbertPreTrainedModel, AlbertModel, AlbertForMaskedLM, AlbertForSequenceClassification,
                                 AlbertForQuestionAnswering,
