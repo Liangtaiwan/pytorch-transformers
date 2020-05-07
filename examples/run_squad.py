@@ -411,15 +411,19 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
+    if evaluate:
+        prefix = list(filter(None, args.predict_file.split("/"))).pop()
+    else:
+        prefix = list(filter(None, args.train_file.split("/"))).pop()
+    prefix = prefix.split(".")[0]
     cached_features_file = os.path.join(
         input_dir,
         "cached_{}_{}_{}".format(
-            "dev" if evaluate else "train",
+            prefix,
             list(filter(None, args.model_name_or_path.split("/"))).pop(),
             str(args.max_seq_length),
         ),
     )
-
     # Init features and dataset from cache if it exists
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
@@ -811,11 +815,15 @@ def main():
         for checkpoint in checkpoints:
             # Reload the model
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
+            prefix = list(filter(None, args.predict_file.split("/"))).pop()
+            prefix = prefix.split(".")[0]
+            if global_step:
+                prefix = f"{prefix}_{global_step}"
             model = AutoModelForQuestionAnswering.from_pretrained(checkpoint)  # , force_download=True)
             model.to(args.device)
 
             # Evaluate
-            result = evaluate(args, model, tokenizer, prefix=global_step)
+            result = evaluate(args, model, tokenizer, prefix=prefix)
 
             result = dict((k + ("_{}".format(global_step) if global_step else ""), v) for k, v in result.items())
             results.update(result)
