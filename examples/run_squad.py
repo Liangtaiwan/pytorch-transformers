@@ -22,6 +22,7 @@ import logging
 import os
 import random
 import timeit
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -816,7 +817,7 @@ def main():
             # Reload the model
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
             prefix = list(filter(None, args.predict_file.split("/"))).pop()
-            prefix = prefix.split(".")[0]
+            prefix = Path(prefix).with_suffix('')
             if global_step:
                 prefix = f"{prefix}_{global_step}"
             model = AutoModelForQuestionAnswering.from_pretrained(checkpoint)  # , force_download=True)
